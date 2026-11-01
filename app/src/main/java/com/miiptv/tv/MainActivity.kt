@@ -18,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.graphics.drawable.GradientDrawable
 import android.widget.AbsListView
 import android.widget.BaseAdapter
@@ -38,6 +39,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -87,6 +89,8 @@ class MainActivity : AppCompatActivity() {
     private val gridAdapter = GridAdapter()
     private val store by lazy { getSharedPreferences("iptv", MODE_PRIVATE) }
     private var currentKey: String? = null
+    private var curUrl = ""
+    private var altTried = false
     private val saveTick = object : Runnable {
         override fun run() {
             if (state == State.PLAYER && !playingLive) saveProgress()
@@ -192,7 +196,20 @@ class MainActivity : AppCompatActivity() {
         e.background = focusBg(FIELD, FIELD_FOCUS)
         e.setPadding(dp(16), dp(12), dp(16), dp(12))
         e.imeOptions = EditorInfo.IME_ACTION_NEXT
+        e.setShowSoftInputOnFocus(false)
+        e.setOnClickListener { showKeyboard(e) }
+        e.setOnFocusChangeListener { v, hasFocus -> if (!hasFocus) hideKeyboard(v) }
         return e
+    }
+
+    private fun showKeyboard(v: View) {
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(v, 0)
+    }
+
+    private fun hideKeyboard(v: View) {
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(v.windowToken, 0)
     }
 
     private fun show(s: State) {
@@ -222,6 +239,7 @@ class MainActivity : AppCompatActivity() {
         etPass = newEdit("Contraseña", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         etPass.imeOptions = EditorInfo.IME_ACTION_DONE
         etPass.setOnEditorActionListener { _, _, _ ->
+            hideKeyboard(etPass)
             doLogin()
             true
         }
@@ -427,7 +445,8 @@ class MainActivity : AppCompatActivity() {
         etSearch = newEdit("Buscar", InputType.TYPE_CLASS_TEXT)
         etSearch.imeOptions = EditorInfo.IME_ACTION_DONE
         etSearch.setOnEditorActionListener { _, _, _ ->
-            list.requestFocus()
+            hideKeyboard(etSearch)
+            activeView().requestFocus()
             true
         }
         etSearch.addTextChangedListener(object : TextWatcher {
@@ -664,14 +683,28 @@ class MainActivity : AppCompatActivity() {
     private fun buildPlayer() {
         val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
-            .setUserAgent("Mozilla/5.0")
+            .setUserAgent("VLC/3.0.20 LibVLC/3.0.20")
         exo = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(http))
             .build()
         exo.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                infoExtra = "No se pudo reproducir (" + error.errorCodeName + "). Prueba con otro."
+                if (playingLive && !altTried && curUrl.endsWith(".m3u8")) {
+                    altTried = true
+                    infoExtra = "Probando otro formato…"
+                    showInfo()
+                    exo.setMediaItem(MediaItem.fromUri(curUrl.removeSuffix(".m3u8") + ".ts"))
+                    exo.prepare()
+                    exo.playWhenReady = true
+                    return
+                }
+                val code = (error.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
+                var detail = error.errorCodeName
+                if (code != null) detail += ", HTTP " + code
+                else if (error.cause?.message != null) detail += ", " + error.cause?.message
+                infoExtra = "No se pudo reproducir (" + detail + ")."
                 showInfo()
+                ui.removeCallbacks(hideInfo)
             }
         })
 
@@ -708,6 +741,8 @@ class MainActivity : AppCompatActivity() {
     private fun startMedia(url: String, title: String, live: Boolean, key: String? = null) {
         playerView.useController = !live
         currentKey = if (live) null else key
+        curUrl = url
+        altTried = false
         infoBase = title
         infoExtra = ""
         show(State.PLAYER)
