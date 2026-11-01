@@ -40,6 +40,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -684,18 +685,28 @@ class MainActivity : AppCompatActivity() {
         val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setUserAgent("VLC/3.0.20 LibVLC/3.0.20")
-        exo = ExoPlayer.Builder(this)
+        val renderers = DefaultRenderersFactory(this)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            .setEnableDecoderFallback(true)
+        exo = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(http))
             .build()
         exo.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                if (playingLive && !altTried && curUrl.endsWith(".m3u8")) {
+                if (playingLive && !altTried && curUrl.endsWith(".m3u8") && error.errorCode < 4000) {
                     altTried = true
                     infoExtra = "Probando otro formato…"
                     showInfo()
                     exo.setMediaItem(MediaItem.fromUri(curUrl.removeSuffix(".m3u8") + ".ts"))
                     exo.prepare()
                     exo.playWhenReady = true
+                    return
+                }
+                if (error.errorCode in 4000..4999) {
+                    infoExtra = "Tu dispositivo no puede reproducir este vídeo (formato 4K/HEVC no compatible). " +
+                        "Prueba la versión HD del canal."
+                    showInfo()
+                    ui.removeCallbacks(hideInfo)
                     return
                 }
                 val code = (error.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
@@ -842,46 +853,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        if (state == State.PLAYER && !playingLive && event.action == KeyEvent.ACTION_DOWN) {
-            when (event.keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                    seekBy(-stepFor(event))
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                    seekBy(stepFor(event))
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    exo.playWhenReady = !exo.playWhenReady
-                    playerView.showController()
-                    return true
-                }
-            }
-        }
         return super.dispatchKeyEvent(event)
     }
 
-    // al mantener pulsado el salto va más rápido
-    private fun stepFor(event: KeyEvent): Long =
-        if (event.repeatCount > 30) 60000L else if (event.repeatCount > 10) 30000L else 10000L
-
-    private fun seekBy(ms: Long) {
-        if (!exo.isCurrentMediaItemSeekable) {
-            infoExtra = "Este contenido no permite adelantar ni retroceder (limitación del servidor o del formato)."
-            showInfo()
-            return
-        }
-        val dur = exo.duration
-        val known = dur > 0L && dur != C.TIME_UNSET
-        var target = exo.currentPosition + ms
-        if (target < 0L) target = 0L
-        if (known && target > dur - 1000L) target = dur - 1000L
-        exo.seekTo(target)
-        infoExtra = fmtMs(target) + (if (known) " / " + fmtMs(dur) else "")
-        showInfo()
-        playerView.showController()
-    }
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
