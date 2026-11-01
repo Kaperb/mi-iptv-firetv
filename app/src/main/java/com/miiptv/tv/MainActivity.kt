@@ -38,6 +38,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -692,6 +693,17 @@ class MainActivity : AppCompatActivity() {
             .setMediaSourceFactory(DefaultMediaSourceFactory(http))
             .build()
         exo.addListener(object : Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                if (playingLive) return
+                val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+                if (audio.isNotEmpty() && audio.none { it.isSelected }) {
+                    val mime = audio[0].getTrackFormat(0).sampleMimeType ?: "desconocido"
+                    infoExtra = "Sin audio: formato no compatible (" + mime.removePrefix("audio/") + ")."
+                    showInfo()
+                    ui.removeCallbacks(hideInfo)
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 if (playingLive && !altTried && curUrl.endsWith(".m3u8") && error.errorCode < 4000) {
                     altTried = true
