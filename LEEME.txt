@@ -1,0 +1,40 @@
+MI IPTV PARA FIRE TV STICK  (app Android, se compila en GitHub)
+
+=== PARTE 1: GENERAR EL APK EN GITHUB (sin instalar nada) ===
+1) Crea una cuenta gratis en https://github.com
+2) Arriba a la derecha: "+" > "New repository".
+   - Nombre: mi-iptv-firetv
+   - Marca "Public" (hace falta para el enlace de descarga directo; el proyecto
+     no contiene tus datos: usuario y contrasena se escriben en la app).
+   - Pulsa "Create repository".
+3) En la pagina del repositorio pulsa el enlace "uploading an existing file".
+4) DESCOMPRIME el zip. Abre la carpeta mi-iptv-firetv y arrastra a la web TODO
+   SU CONTENIDO (app, .github, build.gradle.kts, settings.gradle.kts, etc.).
+   Espera a que termine la subida y pulsa "Commit changes".
+5) Comprueba que en la lista del repositorio aparece la carpeta ".github".
+   Si NO aparece: "Add file" > "Create new file", escribe como nombre
+   .github/workflows/build.yml  y pega dentro el contenido de COPIAR-build.yml.
+   Luego "Commit changes".
+6) Pestana "Actions". Si pide confirmacion, pulsa el boton verde de habilitar.
+   El trabajo "Build APK" empieza solo (tarda 5-10 minutos). Cuando salga el
+   tick verde, esta listo. Si sale una X roja, abre el trabajo y mandame el error.
+7) En la pagina principal del repositorio, a la derecha, entra en "Releases" >
+   "Mi IPTV (ultima version)": ahi esta MiIPTV.apk.
+
+=== PARTE 2: INSTALARLO EN EL FIRE STICK ===
+1) En el Fire Stick, busca e instala la app "Downloader" (naranja).
+2) Ajustes > Mi Fire TV > Opciones para desarrolladores > "Instalar apps
+   desconocidas" > activa Downloader.
+   (Si no ves "Opciones para desarrolladores": Ajustes > Mi Fire TV > Acerca de,
+   y pulsa 7 veces sobre el nombre del dispositivo.)
+3) Abre Downloader, escribe esta direccion (cambia TUUSUARIO por tu usuario):
+   github.com/TUUSUARIO/mi-iptv-firetv/releases/download/latest/MiIPTV.apk
+   Pulsa "Go", espera la descarga y pulsa "Instalar".
+4) Abre "Mi IPTV" desde Tus apps y canales.
+
+=== USO CON EL MANDO ===
+- Entrar: servidor, usuario y contrasena (se recuerdan para la proxima vez).
+- Pestanas TV / Peliculas / Series, boton de categorias y buscador.
+- TV en directo: Arriba/Abajo cambia de canal, OK muestra la guia (ahora y proximos).
+- Peliculas y series: usa los controles de reproduccion en pantalla
+  (izquierda/derecha para saltar). Atras vuelve a la lista.
