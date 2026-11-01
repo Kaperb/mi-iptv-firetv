@@ -41,7 +41,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -686,21 +685,22 @@ class MainActivity : AppCompatActivity() {
         val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setUserAgent("VLC/3.0.20 LibVLC/3.0.20")
-        val renderers = DefaultRenderersFactory(this)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            .setEnableDecoderFallback(true)
-        exo = ExoPlayer.Builder(this, renderers)
+        exo = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(http))
             .build()
         exo.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
                 if (playingLive) return
-                val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
-                if (audio.isNotEmpty() && audio.none { it.isSelected }) {
-                    val mime = audio[0].getTrackFormat(0).sampleMimeType ?: "desconocido"
-                    infoExtra = "Sin audio: formato no compatible (" + mime.removePrefix("audio/") + ")."
-                    showInfo()
-                    ui.removeCallbacks(hideInfo)
+                try {
+                    val audio = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+                    if (audio.isNotEmpty() && audio.none { it.isSelected }) {
+                        val mime = audio[0].getTrackFormat(0).sampleMimeType ?: "desconocido"
+                        infoExtra = "Sin audio: formato no compatible (" + mime.removePrefix("audio/") + ")."
+                        showInfo()
+                        ui.removeCallbacks(hideInfo)
+                    }
+                } catch (e: Exception) {
+                    // el aviso es solo informativo
                 }
             }
 
