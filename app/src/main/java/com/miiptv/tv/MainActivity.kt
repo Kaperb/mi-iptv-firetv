@@ -18,7 +18,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.graphics.drawable.GradientDrawable
+import android.widget.AbsListView
 import android.widget.BaseAdapter
+import android.widget.GridView
+import android.widget.ImageView
+import android.widget.ProgressBar
+import androidx.media3.common.C
+import com.bumptech.glide.Glide
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -76,6 +83,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var list: ListView
     private val tabBtns = LinkedHashMap<Mode, Button>()
     private val rowAdapter = RowAdapter()
+    private lateinit var grid: GridView
+    private val gridAdapter = GridAdapter()
+    private val store by lazy { getSharedPreferences("iptv", MODE_PRIVATE) }
+    private var currentKey: String? = null
+    private val saveTick = object : Runnable {
+        override fun run() {
+            if (state == State.PLAYER && !playingLive) saveProgress()
+            ui.postDelayed(this, 10000)
+        }
+    }
 
     private lateinit var playerLayer: FrameLayout
     private lateinit var playerView: PlayerView
@@ -123,6 +140,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        saveProgress()
         exo.pause()
     }
 
@@ -308,6 +326,67 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private inner class GridAdapter : BaseAdapter() {
+        private var data: List<Item> = emptyList()
+
+        fun setItems(l: List<Item>) {
+            data = l
+            notifyDataSetChanged()
+        }
+
+        override fun getCount(): Int = data.size
+        override fun getItem(position: Int): Any = data[position]
+        override fun getItemId(position: Int): Long = position.toLong()
+
+        private fun buildCell(): LinearLayout {
+            val ctx = this@MainActivity
+            val cell = LinearLayout(ctx)
+            cell.orientation = LinearLayout.VERTICAL
+            cell.layoutParams = AbsListView.LayoutParams(MATCH, dp(300))
+            cell.setPadding(dp(4), dp(4), dp(4), dp(4))
+            val frame = FrameLayout(ctx)
+            val iv = ImageView(ctx)
+            iv.scaleType = ImageView.ScaleType.CENTER_CROP
+            iv.setBackgroundColor(HOVER)
+            frame.addView(iv, FrameLayout.LayoutParams(MATCH, MATCH))
+            val pb = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal)
+            pb.max = 1000
+            pb.progressTintList = ColorStateList.valueOf(ACCENT)
+            pb.progressBackgroundTintList = ColorStateList.valueOf(LINE)
+            frame.addView(pb, FrameLayout.LayoutParams(MATCH, dp(6), Gravity.BOTTOM))
+            cell.addView(frame, LinearLayout.LayoutParams(MATCH, dp(236)))
+            val tv = TextView(ctx)
+            tv.setTextColor(TEXT)
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            tv.maxLines = 2
+            tv.ellipsize = TextUtils.TruncateAt.END
+            tv.setPadding(dp(2), dp(6), dp(2), 0)
+            cell.addView(tv, LinearLayout.LayoutParams(MATCH, WRAP))
+            return cell
+        }
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+            val cell: LinearLayout = if (convertView is LinearLayout) convertView else buildCell()
+            val frame = cell.getChildAt(0) as FrameLayout
+            val iv = frame.getChildAt(0) as ImageView
+            val pb = frame.getChildAt(1) as ProgressBar
+            val tv = cell.getChildAt(1) as TextView
+            val item = data[position]
+            val watched = mode == Mode.MOVIE && store.getBoolean("w_m_" + item.id, false)
+            tv.text = (if (watched) "✓ " else "") + item.name
+            if (item.img.startsWith("http")) {
+                Glide.with(this@MainActivity).load(item.img).override(dp(200), dp(280)).centerCrop().into(iv)
+            } else {
+                Glide.with(this@MainActivity).clear(iv)
+                iv.setImageDrawable(null)
+            }
+            val frac = if (mode == Mode.MOVIE) progressOf("m_" + item.id) else 0
+            pb.progress = frac
+            pb.visibility = if (frac > 0) View.VISIBLE else View.GONE
+            return cell
+        }
+    }
+
     private fun buildBrowse() {
         browseView = LinearLayout(this)
         browseView.orientation = LinearLayout.VERTICAL
@@ -375,6 +454,26 @@ class MainActivity : AppCompatActivity() {
         val pl = LinearLayout.LayoutParams(MATCH, 0, 1f)
         pl.topMargin = dp(12)
         browseView.addView(list, pl)
+
+        grid = GridView(this)
+        grid.adapter = gridAdapter
+        grid.numColumns = GridView.AUTO_FIT
+        grid.columnWidth = dp(170)
+        grid.stretchMode = GridView.STRETCH_COLUMN_WIDTH
+        grid.horizontalSpacing = dp(14)
+        grid.verticalSpacing = dp(14)
+        grid.isFocusable = true
+        val sel = GradientDrawable()
+        sel.setColor(Color.TRANSPARENT)
+        sel.setStroke(dp(4), ACCENT)
+        sel.cornerRadius = dp(6).toFloat()
+        grid.setSelector(sel)
+        grid.setDrawSelectorOnTop(true)
+        grid.setOnItemClickListener { _, _, pos, _ -> onRowClick(pos) }
+        grid.visibility = View.GONE
+        val pg = LinearLayout.LayoutParams(MATCH, 0, 1f)
+        pg.topMargin = dp(12)
+        browseView.addView(grid, pg)
     }
 
     private fun setMode(m: Mode) {
@@ -385,11 +484,12 @@ class MainActivity : AppCompatActivity() {
         btnCat.text = "Todas las categorías"
         for ((k, b) in tabBtns) styleBtn(b, k == m)
         show(State.BROWSE)
+        applyView()
         etSearch.setText("")
         val cached = cache[m]
         if (cached != null) {
             applyItems(cached)
-            list.requestFocus()
+            activeView().requestFocus()
             return
         }
         applyItems(emptyList())
@@ -402,7 +502,7 @@ class MainActivity : AppCompatActivity() {
                     cache[m] = res
                     if (mode == m) {
                         applyItems(res)
-                        list.requestFocus()
+                        activeView().requestFocus()
                     }
                 }
             } catch (e: Exception) {
@@ -425,6 +525,7 @@ class MainActivity : AppCompatActivity() {
         }
         visible = if (match.size > MAX_ROWS) match.subList(0, MAX_ROWS) else match
         rowAdapter.setRows(visible.map { it.name })
+        gridAdapter.setItems(visible)
         status.text = if (match.size > MAX_ROWS)
             mode.label + ": " + MAX_ROWS + " de " + match.size + " (usa el buscador)"
         else
@@ -450,7 +551,7 @@ class MainActivity : AppCompatActivity() {
         if (episodesOpen) {
             val ep = episodes.getOrNull(pos) ?: return
             playingLive = false
-            startMedia(ep.url, seriesName + " · T" + ep.season + " E" + ep.num + " · " + ep.title, false)
+            startMedia(ep.url, seriesName + " · T" + ep.season + " E" + ep.num + " · " + ep.title, false, "e_" + ep.id)
             return
         }
         val item = visible.getOrNull(pos) ?: return
@@ -462,7 +563,7 @@ class MainActivity : AppCompatActivity() {
             }
             Mode.MOVIE -> {
                 playingLive = false
-                startMedia(item.url, item.name, false)
+                startMedia(item.url, item.name, false, "m_" + item.id)
             }
             Mode.SERIES -> openSeries(item)
         }
@@ -471,7 +572,7 @@ class MainActivity : AppCompatActivity() {
     private fun openSeries(item: Item) {
         val c = cfg ?: return
         status.text = "Cargando episodios…"
-        savedPos = list.selectedItemPosition
+        savedPos = activeView().selectedItemPosition
         Thread {
             try {
                 val eps = Api.episodes(c, item.id)
@@ -490,21 +591,73 @@ class MainActivity : AppCompatActivity() {
         seriesName = item.name
         episodes = eps
         episodesOpen = true
+        applyView()
         filterBar.visibility = View.GONE
-        rowAdapter.setRows(eps.map { "T" + it.season + " · E" + it.num + " · " + it.title })
+        rowAdapter.setRows(episodeRows())
         status.text = item.name + " · " + eps.size + " episodios (Atrás para volver)"
         show(State.EPISODES)
         list.requestFocus()
-        list.setSelection(0)
+        // se coloca en el primer episodio que aún no has terminado
+        val first = eps.indexOfFirst { !store.getBoolean("w_e_" + it.id, false) }
+        list.setSelection(if (first < 0) 0 else first)
     }
 
     private fun closeEpisodes() {
         episodesOpen = false
+        applyView()
         filterBar.visibility = View.VISIBLE
         refilter()
         show(State.BROWSE)
-        list.requestFocus()
-        list.setSelection(savedPos)
+        activeView().requestFocus()
+        activeView().setSelection(savedPos)
+    }
+
+    // ------------------------------------------------------------ vista activa y progreso guardado
+    private fun applyView() {
+        val useList = mode == Mode.LIVE || episodesOpen
+        list.visibility = if (useList) View.VISIBLE else View.GONE
+        grid.visibility = if (useList) View.GONE else View.VISIBLE
+    }
+
+    private fun activeView(): AbsListView = if (mode == Mode.LIVE || episodesOpen) list else grid
+
+    private fun fmtMs(ms: Long): String {
+        val s = ms / 1000
+        val h = s / 3600
+        val m = (s % 3600) / 60
+        val sec = s % 60
+        return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, sec)
+        else String.format(Locale.US, "%d:%02d", m, sec)
+    }
+
+    private fun progressOf(key: String): Int {
+        val p = store.getLong("p_" + key, 0L)
+        val d = store.getLong("d_" + key, 0L)
+        return if (p > 0L && d > 0L) (p * 1000 / d).toInt().coerceIn(0, 1000) else 0
+    }
+
+    private fun saveProgress() {
+        val key = currentKey ?: return
+        if (playingLive) return
+        val pos = exo.currentPosition
+        val dur = exo.duration
+        if (dur <= 0L || dur == C.TIME_UNSET) return
+        val e = store.edit()
+        if (dur - pos < 30000L) {
+            e.remove("p_" + key).remove("d_" + key).putBoolean("w_" + key, true)
+        } else if (pos > 5000L) {
+            e.putLong("p_" + key, pos).putLong("d_" + key, dur)
+        }
+        e.apply()
+    }
+
+    private fun episodeRows(): List<String> = episodes.map { ep ->
+        val key = "e_" + ep.id
+        var label = "T" + ep.season + " · E" + ep.num + " · " + ep.title
+        val pos = store.getLong("p_" + key, 0L)
+        if (pos > 0L) label += "   ▶ " + fmtMs(pos)
+        else if (store.getBoolean("w_" + key, false)) label += "   ✓"
+        label
     }
 
     // ------------------------------------------------------------ reproductor
@@ -552,17 +705,26 @@ class MainActivity : AppCompatActivity() {
         ui.postDelayed(hideInfo, 6000)
     }
 
-    private fun startMedia(url: String, title: String, live: Boolean) {
+    private fun startMedia(url: String, title: String, live: Boolean, key: String? = null) {
         playerView.useController = !live
+        currentKey = if (live) null else key
         infoBase = title
         infoExtra = ""
         show(State.PLAYER)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        exo.setMediaItem(MediaItem.fromUri(url))
+        val resume = if (key != null && !live) store.getLong("p_" + key, 0L) else 0L
+        if (resume > 0L) {
+            exo.setMediaItem(MediaItem.fromUri(url), resume)
+            infoExtra = "Reanudando desde " + fmtMs(resume)
+        } else {
+            exo.setMediaItem(MediaItem.fromUri(url))
+        }
         exo.prepare()
         exo.playWhenReady = true
         playerView.requestFocus()
         showInfo()
+        ui.removeCallbacks(saveTick)
+        if (!live) ui.postDelayed(saveTick, 10000)
     }
 
     private fun playLive() {
@@ -608,13 +770,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closePlayer() {
+        saveProgress()
+        ui.removeCallbacks(saveTick)
         exo.stop()
         exo.clearMediaItems()
         ui.removeCallbacks(hideInfo)
         epgToken++
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val pos = activeView().selectedItemPosition
+        if (episodesOpen) rowAdapter.setRows(episodeRows()) else gridAdapter.notifyDataSetChanged()
         show(if (episodesOpen) State.EPISODES else State.BROWSE)
-        list.requestFocus()
+        activeView().requestFocus()
+        if (pos >= 0) activeView().setSelection(pos)
     }
 
     // ------------------------------------------------------------ mando a distancia

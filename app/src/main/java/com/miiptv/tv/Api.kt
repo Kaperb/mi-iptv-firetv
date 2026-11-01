@@ -8,8 +8,8 @@ import java.net.URL
 import java.net.URLEncoder
 
 data class Cfg(val base: String, val user: String, val pass: String)
-data class Item(val id: String, val name: String, val group: String, val url: String)
-data class Episode(val season: String, val num: String, val title: String, val url: String)
+data class Item(val id: String, val name: String, val group: String, val url: String, val img: String = "")
+data class Episode(val season: String, val num: String, val title: String, val url: String, val id: String = "")
 data class Prog(val start: Long, val stop: Long, val title: String)
 
 object Api {
@@ -83,7 +83,7 @@ object Api {
             val id = o.optString("stream_id")
             val ext = o.optString("container_extension").ifEmpty { "mp4" }
             out.add(Item(id, o.optString("name", "Película"), names[o.optString("category_id")] ?: "",
-                media(cfg, "movie", id, ext)))
+                media(cfg, "movie", id, ext), o.optString("stream_icon")))
         }
         return out
     }
@@ -95,7 +95,7 @@ object Api {
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             out.add(Item(o.optString("series_id"), o.optString("name", "Serie"),
-                names[o.optString("category_id")] ?: "", ""))
+                names[o.optString("category_id")] ?: "", "", o.optString("cover")))
         }
         return out
     }
@@ -116,7 +116,8 @@ object Api {
                     e.optString("season").ifEmpty { season },
                     num,
                     e.optString("title").ifEmpty { "Episodio " + num },
-                    media(cfg, "series", e.optString("id"), ext)
+                    media(cfg, "series", e.optString("id"), ext),
+                    e.optString("id")
                 ))
             }
         }
