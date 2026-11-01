@@ -743,7 +743,8 @@ class MainActivity : AppCompatActivity() {
         currentKey = if (live) null else key
         curUrl = url
         altTried = false
-        infoBase = title
+        val ext = url.substringAfterLast('.', "").uppercase()
+        infoBase = if (!live && ext.length in 2..4) title + "  [" + ext + "]" else title
         infoExtra = ""
         show(State.PLAYER)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -841,7 +842,45 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        if (state == State.PLAYER && !playingLive && event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    seekBy(-stepFor(event))
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    seekBy(stepFor(event))
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                    exo.playWhenReady = !exo.playWhenReady
+                    playerView.showController()
+                    return true
+                }
+            }
+        }
         return super.dispatchKeyEvent(event)
+    }
+
+    // al mantener pulsado el salto va más rápido
+    private fun stepFor(event: KeyEvent): Long =
+        if (event.repeatCount > 30) 60000L else if (event.repeatCount > 10) 30000L else 10000L
+
+    private fun seekBy(ms: Long) {
+        if (!exo.isCurrentMediaItemSeekable) {
+            infoExtra = "Este contenido no permite adelantar ni retroceder (limitación del servidor o del formato)."
+            showInfo()
+            return
+        }
+        val dur = exo.duration
+        val known = dur > 0L && dur != C.TIME_UNSET
+        var target = exo.currentPosition + ms
+        if (target < 0L) target = 0L
+        if (known && target > dur - 1000L) target = dur - 1000L
+        exo.seekTo(target)
+        infoExtra = fmtMs(target) + (if (known) " / " + fmtMs(dur) else "")
+        showInfo()
+        playerView.showController()
     }
 
     @Suppress("DEPRECATION")
